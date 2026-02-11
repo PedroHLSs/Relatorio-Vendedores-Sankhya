@@ -1,0 +1,397 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jasperReport xmlns="http://jasperreports.sourceforge.net/jasperreports" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://jasperreports.sourceforge.net/jasperreports http://jasperreports.sourceforge.net/xsd/jasperreport.xsd" name="Comissao Vendas" language="groovy" pageWidth="595" pageHeight="842" columnWidth="555" leftMargin="20" rightMargin="20" topMargin="20" bottomMargin="20">
+	<property name="ireport.zoom" value="1.5"/>
+	<property name="ireport.x" value="0"/>
+	<property name="ireport.y" value="0"/>
+	<property name="ireport.definition"/>
+	<style name="table">
+		<box>
+			<pen lineWidth="1.0" lineColor="#000000"/>
+		</box>
+	</style>
+	<style name="table_TH" mode="Opaque" backcolor="#F0F8FF">
+		<box>
+			<pen lineWidth="0.5" lineColor="#000000"/>
+		</box>
+	</style>
+	<style name="table_CH" mode="Opaque" backcolor="#BFE1FF">
+		<box>
+			<pen lineWidth="0.5" lineColor="#000000"/>
+		</box>
+	</style>
+	<style name="table_TD" mode="Opaque" backcolor="#FFFFFF">
+		<box>
+			<pen lineWidth="0.5" lineColor="#000000"/>
+		</box>
+	</style>
+	<subDataset name="Table Dataset 1"/>
+	<parameter name="CODVEND" class="java.math.BigDecimal">
+		<property name="nomeTabela" value="TGFVEN"/>
+		<parameterDescription><![CDATA[Vendedor]]></parameterDescription>
+	</parameter>
+	<parameter name="DTNEG1" class="java.util.Date">
+		<parameterDescription><![CDATA[Dt. Negociação]]></parameterDescription>
+	</parameter>
+	<parameter name="DTNEG2" class="java.util.Date">
+		<parameterDescription><![CDATA[Dt. Negociação]]></parameterDescription>
+	</parameter>
+	<parameter name="SUBREPORT_DIR" class="java.lang.String" isForPrompting="false">
+		<defaultValueExpression><![CDATA["C:\\Users\\phlop\\OneDrive\\.sankhyaw-ireport\\Base Real\\253\\"]]></defaultValueExpression>
+	</parameter>
+	<queryString>
+		<![CDATA[WITH VENDAS AS (
+    SELECT
+        CAB.CODVEND,
+        VEN.APELIDO,
+        CAB.CODEMP,
+        VEN.AD_VLRCOMHEC,
+        SUM(CAB.VLRNOTA) AS VLRNOTA,
+        SUM(
+            CASE
+                WHEN CAB.CODTIPOPER IN (1012, 9995, 9996, 9999, 1201, 1202)
+                    THEN -CAB.VLRNOTA
+                ELSE CAB.VLRNOTA
+            END
+        ) AS TOTAL_VENDAS
+    FROM TGFCAB CAB
+    JOIN TGFVEN VEN ON VEN.CODVEND = CAB.CODVEND
+    WHERE CAB.DTNEG BETWEEN $P{DTNEG1} AND $P{DTNEG2}
+      AND CAB.TIPMOV IN ('P','D')
+      AND CAB.CODTIPOPER IN (1001,1013,1057,1201,9996,9999,1007)
+    GROUP BY
+        CAB.CODVEND,
+        VEN.APELIDO,
+        CAB.CODEMP,
+        VEN.AD_VLRCOMHEC
+),
+
+COM_FAIXA AS (
+    SELECT
+        CODVEND,
+        APELIDO,
+        CODEMP,
+        TOTAL_VENDAS,
+        VLRNOTA,
+        AD_VLRCOMHEC,
+        CASE
+            WHEN TOTAL_VENDAS <= 80000 THEN 0.005
+            WHEN TOTAL_VENDAS <= 150000 THEN 0.0075
+            ELSE 0.01
+        END AS PERCENTUAL_COMISSAO
+    FROM VENDAS
+),
+
+COMISSAO_VENDEDOR AS (
+    SELECT
+        CODVEND,
+        APELIDO,
+        CODEMP,
+        TOTAL_VENDAS,
+        VLRNOTA,
+        AD_VLRCOMHEC,
+        PERCENTUAL_COMISSAO,
+        TOTAL_VENDAS * PERCENTUAL_COMISSAO AS VALOR_COMISSAO
+    FROM COM_FAIXA
+),
+
+COMISSAO_EXTRA_VEND1 AS (
+    SELECT
+        1 AS CODVEND,
+        SUM(CASE WHEN CODEMP = 1 THEN VALOR_COMISSAO * 0.33 ELSE 0 END) AS COMISSAO_EXTRA_PTC,
+        SUM(CASE WHEN CODEMP = 3 THEN VALOR_COMISSAO * 0.25 ELSE 0 END) AS COMISSAO_EXTRA_SG
+    FROM COMISSAO_VENDEDOR
+    WHERE CODVEND IN (2, 26, 33, 38, 41, 49, 59)
+),
+
+HECTARE AS (
+    SELECT
+        CODVEND,
+        SUM(HECTARES) AS QTD_HECTARE
+    FROM AD_PRJCOMISSAO
+    WHERE DTENTSAI BETWEEN $P{DTNEG1} AND $P{DTNEG2}
+    GROUP BY CODVEND
+)
+
+SELECT
+    C.CODVEND,
+    C.APELIDO,
+    C.TOTAL_VENDAS,
+    C.VLRNOTA,
+    C.AD_VLRCOMHEC,
+    C.PERCENTUAL_COMISSAO,
+
+    C.TOTAL_VENDAS * C.PERCENTUAL_COMISSAO AS COMISSAO_BASE,
+
+    COALESCE(CE.COMISSAO_EXTRA_PTC, 0) AS COMISSAO_EXTRA_PTC,
+    COALESCE(CE.COMISSAO_EXTRA_SG, 0) AS COMISSAO_EXTRA_SG,
+
+    COALESCE(H.QTD_HECTARE, 0) AS QTD_HECTARE,
+
+    CASE
+        WHEN C.CODVEND = 1 THEN (
+               C.TOTAL_VENDAS * C.PERCENTUAL_COMISSAO
+             + COALESCE(H.QTD_HECTARE,0) * COALESCE(C.AD_VLRCOMHEC,0)
+             + COALESCE(CE.COMISSAO_EXTRA_PTC,0)
+             + COALESCE(CE.COMISSAO_EXTRA_SG,0)
+        )
+        WHEN C.CODVEND = 33 THEN (
+               C.TOTAL_VENDAS * C.PERCENTUAL_COMISSAO
+             + COALESCE(H.QTD_HECTARE,0) * COALESCE(C.AD_VLRCOMHEC,0)
+        )
+        ELSE (
+               C.TOTAL_VENDAS * C.PERCENTUAL_COMISSAO
+             + COALESCE(C.AD_VLRCOMHEC,0)
+        )
+    END AS VALOR_COMISSAO_TOTAL
+
+FROM COM_FAIXA C
+LEFT JOIN COMISSAO_EXTRA_VEND1 CE ON CE.CODVEND = C.CODVEND
+LEFT JOIN HECTARE H ON H.CODVEND = C.CODVEND
+WHERE ($P{CODVEND} IS NULL OR C.CODVEND = $P{CODVEND})
+ORDER BY C.CODVEND]]>
+	</queryString>
+	<field name="CODVEND" class="java.math.BigDecimal"/>
+	<field name="APELIDO" class="java.lang.String"/>
+	<field name="TOTAL_VENDAS" class="java.math.BigDecimal"/>
+	<field name="VLRNOTA" class="java.math.BigDecimal"/>
+	<field name="AD_VLRCOMHEC" class="java.lang.Double"/>
+	<field name="PERCENTUAL_COMISSAO" class="java.math.BigDecimal"/>
+	<field name="COMISSAO_BASE" class="java.math.BigDecimal"/>
+	<field name="COMISSAO_EXTRA_PTC" class="java.math.BigDecimal"/>
+	<field name="COMISSAO_EXTRA_SG" class="java.math.BigDecimal"/>
+	<field name="QTD_HECTARE" class="java.math.BigDecimal"/>
+	<field name="VALOR_COMISSAO_TOTAL" class="java.math.BigDecimal"/>
+	<variable name="VLRNOTA_3" class="java.math.BigDecimal" calculation="Sum">
+		<variableExpression><![CDATA[$F{VLRNOTA}]]></variableExpression>
+		<initialValueExpression><![CDATA[new java.math.BigDecimal(0)]]></initialValueExpression>
+	</variable>
+	<title>
+		<band height="80" splitType="Stretch">
+			<rectangle>
+				<reportElement x="0" y="0" width="555" height="50" backcolor="#2C5F99"/>
+				<graphicElement>
+					<pen lineWidth="0.0"/>
+				</graphicElement>
+			</rectangle>
+			<staticText>
+				<reportElement x="0" y="10" width="555" height="30" forecolor="#FFFFFF"/>
+				<textElement textAlignment="Center" verticalAlignment="Middle">
+					<font fontName="Arial" size="18" isBold="true"/>
+				</textElement>
+				<text><![CDATA[RELATÓRIO DE COMISSÃO DE VENDAS]]></text>
+			</staticText>
+			<rectangle>
+				<reportElement x="0" y="52" width="555" height="25" backcolor="#E8F0F7"/>
+				<graphicElement>
+					<pen lineWidth="0.5" lineColor="#2C5F99"/>
+				</graphicElement>
+			</rectangle>
+			<staticText>
+				<reportElement x="10" y="56" width="60" height="17"/>
+				<textElement verticalAlignment="Middle">
+					<font fontName="Arial" size="10" isBold="true"/>
+				</textElement>
+				<text><![CDATA[Vendedor:]]></text>
+			</staticText>
+			<textField>
+				<reportElement x="70" y="56" width="150" height="17" forecolor="#2C5F99"/>
+				<textElement verticalAlignment="Middle">
+					<font fontName="Arial" size="10" isBold="true"/>
+				</textElement>
+				<textFieldExpression class="java.lang.String"><![CDATA[$F{APELIDO}]]></textFieldExpression>
+			</textField>
+			<staticText>
+				<reportElement x="280" y="56" width="50" height="17"/>
+				<textElement verticalAlignment="Middle">
+					<font fontName="Arial" size="10" isBold="true"/>
+				</textElement>
+				<text><![CDATA[Período:]]></text>
+			</staticText>
+			<textField pattern="dd/MM/yyyy">
+				<reportElement x="330" y="56" width="68" height="17" forecolor="#2C5F99"/>
+				<textElement verticalAlignment="Middle">
+					<font fontName="Arial" size="10" isBold="true"/>
+				</textElement>
+				<textFieldExpression class="java.util.Date"><![CDATA[$P{DTNEG1}]]></textFieldExpression>
+			</textField>
+			<staticText>
+				<reportElement x="398" y="56" width="22" height="17"/>
+				<textElement textAlignment="Center" verticalAlignment="Middle">
+					<font fontName="Arial" size="10" isBold="true"/>
+				</textElement>
+				<text><![CDATA[à]]></text>
+			</staticText>
+			<textField pattern="dd/MM/yyyy">
+				<reportElement x="420" y="56" width="68" height="17" forecolor="#2C5F99"/>
+				<textElement verticalAlignment="Middle">
+					<font fontName="Arial" size="10" isBold="true"/>
+				</textElement>
+				<textFieldExpression class="java.util.Date"><![CDATA[$P{DTNEG2}]]></textFieldExpression>
+			</textField>
+		</band>
+	</title>
+	<pageHeader>
+		<band height="24" splitType="Stretch">
+			<printWhenExpression><![CDATA[$F{CODVEND} != null && ($F{CODVEND}.intValue() == 1 || $F{CODVEND}.intValue() == 33)]]></printWhenExpression>
+			<line>
+				<reportElement key="line-1" mode="Opaque" x="0" y="0" width="555" height="1" forecolor="#000000" backcolor="#FFFFFF"/>
+				<graphicElement fill="Solid">
+					<pen lineWidth="0.5" lineStyle="Solid"/>
+				</graphicElement>
+			</line>
+			<staticText>
+				<reportElement x="220" y="1" width="115" height="20" isRemoveLineWhenBlank="true"/>
+				<textElement textAlignment="Right" verticalAlignment="Middle">
+					<font fontName="Arial" size="10" isBold="true"/>
+				</textElement>
+				<text><![CDATA[Total Comissão Projeto]]></text>
+			</staticText>
+		</band>
+	</pageHeader>
+	<columnHeader>
+		<band height="18">
+			<printWhenExpression><![CDATA[$F{CODVEND} != null && ($F{CODVEND}.intValue() == 1 || $F{CODVEND}.intValue() == 33)]]></printWhenExpression>
+		</band>
+	</columnHeader>
+	<detail>
+		<band height="50">
+			<printWhenExpression><![CDATA[$F{CODVEND} != null && ($F{CODVEND}.intValue() == 1 || $F{CODVEND}.intValue() == 33)]]></printWhenExpression>
+			<subreport isUsingCache="true">
+				<reportElement key="relatorioSub" x="0" y="0" width="555" height="50" isRemoveLineWhenBlank="true" isPrintWhenDetailOverflows="true"/>
+				<subreportParameter name="CODVEND">
+					<subreportParameterExpression><![CDATA[$F{CODVEND}]]></subreportParameterExpression>
+				</subreportParameter>
+				<connectionExpression><![CDATA[$P{REPORT_CONNECTION}]]></connectionExpression>
+				<subreportExpression class="java.lang.String"><![CDATA[$P{SUBREPORT_DIR}+"relatorioSub.jasper"]]></subreportExpression>
+			</subreport>
+		</band>
+	</detail>
+	<summary>
+		<band height="159">
+			<textField pattern="#,##0.00">
+				<reportElement x="140" y="11" width="165" height="20"/>
+				<textElement verticalAlignment="Middle">
+					<font fontName="Arial" size="8" isBold="true"/>
+				</textElement>
+				<textFieldExpression class="java.lang.Double"><![CDATA[$F{TOTAL_VENDAS}.doubleValue()]]></textFieldExpression>
+			</textField>
+			<staticText>
+				<reportElement x="41" y="11" width="86" height="20"/>
+				<textElement verticalAlignment="Middle">
+					<font fontName="Arial" size="8" isBold="true"/>
+				</textElement>
+				<text><![CDATA[Valor Total Vendas:]]></text>
+			</staticText>
+			<staticText>
+				<reportElement x="41" y="139" width="86" height="20"/>
+				<textElement verticalAlignment="Middle">
+					<font fontName="Arial" size="8" isBold="true"/>
+				</textElement>
+				<text><![CDATA[Comissão Total:]]></text>
+			</staticText>
+			<textField pattern="#,##0.00;-#,##0.00">
+				<reportElement x="140" y="139" width="165" height="20"/>
+				<textElement verticalAlignment="Middle">
+					<font fontName="Arial" size="8" isBold="true"/>
+				</textElement>
+				<textFieldExpression class="java.lang.Double"><![CDATA[(
+    (
+        $F{TOTAL_VENDAS} != null
+            ? ((java.math.BigDecimal)$F{TOTAL_VENDAS}).doubleValue()
+            : 0.0
+    )
+    *
+    (
+        $F{PERCENTUAL_COMISSAO} != null
+            ? ((java.math.BigDecimal)$F{PERCENTUAL_COMISSAO}).doubleValue()
+            : 0.0
+    )
+)
++
+(
+    (
+        $F{QTD_HECTARE} != null
+            ? ((java.math.BigDecimal)$F{QTD_HECTARE}).doubleValue()
+            : 0.0
+    )
+    *
+    (
+        $F{AD_VLRCOMHEC} != null
+            ? ((java.lang.Double)$F{AD_VLRCOMHEC}).doubleValue()
+            : 0.0
+    )
+)
++
+(
+    (
+        $F{COMISSAO_EXTRA_PTC} != null
+            ? ((java.math.BigDecimal)$F{COMISSAO_EXTRA_PTC}).doubleValue()
+            : 0.0
+    )
+    +
+    (
+        $F{COMISSAO_EXTRA_SG} != null
+            ? ((java.math.BigDecimal)$F{COMISSAO_EXTRA_SG}).doubleValue()
+            : 0.0
+    )
+)]]></textFieldExpression>
+			</textField>
+			<staticText>
+				<reportElement x="41" y="74" width="86" height="20" isRemoveLineWhenBlank="true">
+					<printWhenExpression><![CDATA[$F{CODVEND} != null && ($F{CODVEND}.intValue() == 1)]]></printWhenExpression>
+				</reportElement>
+				<textElement verticalAlignment="Middle">
+					<font fontName="Arial" size="8" isBold="true"/>
+				</textElement>
+				<text><![CDATA[Comissão Extra PTC:]]></text>
+			</staticText>
+			<textField pattern="#,##0.00;-#,##0.00">
+				<reportElement x="140" y="74" width="165" height="20" isRemoveLineWhenBlank="true">
+					<printWhenExpression><![CDATA[$F{CODVEND} != null && ($F{CODVEND}.intValue() == 1)]]></printWhenExpression>
+				</reportElement>
+				<textElement verticalAlignment="Middle">
+					<font fontName="Arial" size="8" isBold="true"/>
+				</textElement>
+				<textFieldExpression class="java.lang.Double"><![CDATA[$F{COMISSAO_EXTRA_PTC}.doubleValue()]]></textFieldExpression>
+			</textField>
+			<staticText>
+				<reportElement x="41" y="104" width="86" height="20" isRemoveLineWhenBlank="true">
+					<printWhenExpression><![CDATA[$F{CODVEND} != null && ($F{CODVEND}.intValue() == 1)]]></printWhenExpression>
+				</reportElement>
+				<textElement verticalAlignment="Middle">
+					<font fontName="Arial" size="8" isBold="true"/>
+				</textElement>
+				<text><![CDATA[Comissão Extra SG:]]></text>
+			</staticText>
+			<textField pattern="#,##0.00;-#,##0.00">
+				<reportElement x="140" y="104" width="165" height="20" isRemoveLineWhenBlank="true">
+					<printWhenExpression><![CDATA[$F{CODVEND} != null && ($F{CODVEND}.intValue() == 1)]]></printWhenExpression>
+				</reportElement>
+				<textElement verticalAlignment="Middle">
+					<font fontName="Arial" size="8" isBold="true"/>
+				</textElement>
+				<textFieldExpression class="java.lang.Double"><![CDATA[$F{COMISSAO_EXTRA_SG}.doubleValue()]]></textFieldExpression>
+			</textField>
+			<staticText>
+				<reportElement x="41" y="42" width="86" height="20"/>
+				<textElement verticalAlignment="Middle">
+					<font fontName="Arial" size="8" isBold="true"/>
+				</textElement>
+				<text><![CDATA[Valor Comissão Base:]]></text>
+			</staticText>
+			<textField pattern="#,##0.00">
+				<reportElement x="140" y="42" width="165" height="20"/>
+				<textElement verticalAlignment="Middle">
+					<font fontName="Arial" size="8" isBold="true"/>
+				</textElement>
+				<textFieldExpression class="java.lang.Double"><![CDATA[$F{COMISSAO_BASE}.doubleValue()]]></textFieldExpression>
+			</textField>
+			<line>
+				<reportElement key="line-1" mode="Opaque" x="0" y="0" width="555" height="1" forecolor="#000000" backcolor="#FFFFFF"/>
+				<graphicElement fill="Solid">
+					<pen lineWidth="0.5" lineStyle="Solid"/>
+				</graphicElement>
+			</line>
+		</band>
+	</summary>
+</jasperReport>
